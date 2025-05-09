@@ -146,3 +146,99 @@ def get_lead_by_id(
         raise HTTPException(status_code=403, detail="Not authorized to access this lead")
     
     return lead
+
+@router.get("/leads/platform/{platform_id}", response_model=LeadOut)
+def get_lead_by_platform_id(
+    platform_id: str,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    """Get a lead by its platform-specific ID"""
+    lead = crud_lead.get_lead_by_platform_id(db, platform_id)
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Check authorization - admins can view any lead, users only their own
+    if user.role_id != 1 and lead.assigned_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this lead")
+    
+    return lead
+
+@router.put("/leads/platform/{platform_id}", response_model=LeadOut)
+def update_lead_by_platform_id(
+    platform_id: str,
+    update: LeadUpdate,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    """Update a lead by its platform-specific ID"""
+    lead = crud_lead.get_lead_by_platform_id(db, platform_id)
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Check authorization - admins can update any lead, users only their own
+    if user.role_id != 1 and lead.assigned_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this lead")
+    
+    # Update the lead
+    lead = crud_lead.update_lead_by_platform_id(db, platform_id, update)
+    return lead
+
+# Lead Status Change
+from app.schemas.lead import LeadStatusChangeCreate, LeadStatusChangeOut, LeadStatusChangeUpdate, LeadNoteCreate, LeadNoteOut, LeadNoteUpdate
+
+@router.post("/leads/{lead_id}/status-change", response_model=LeadStatusChangeOut)
+def create_status_change(
+    lead_id: int,
+    status_change: LeadStatusChangeCreate,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    return crud_lead.create_lead_status_change(db, lead_id, status_change)
+
+@router.put("/status-change/{status_change_id}", response_model=LeadStatusChangeOut)
+def update_status_change(
+    status_change_id: int,
+    status_change_update: LeadStatusChangeUpdate,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    return crud_lead.update_lead_status_change(db, status_change_id, status_change_update)
+
+@router.delete("/status-change/{status_change_id}")
+def delete_status_change(
+    status_change_id: int,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    crud_lead.delete_lead_status_change(db, status_change_id)
+    return {"detail": "Status change deleted successfully"}
+
+@router.post("/leads/{lead_id}/notes", response_model=LeadNoteOut)
+def create_note(
+    lead_id: int,
+    note: LeadNoteCreate,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    return crud_lead.create_lead_note(db, lead_id, note)
+
+@router.put("/notes/{note_id}", response_model=LeadNoteOut)
+def update_note(
+    note_id: int,
+    note_update: LeadNoteUpdate,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    return crud_lead.update_lead_note(db, note_id, note_update)
+
+@router.delete("/notes/{note_id}")
+def delete_note(
+    note_id: int,
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user)
+):
+    crud_lead.delete_lead_note(db, note_id)
+    return {"detail": "Note deleted successfully"}

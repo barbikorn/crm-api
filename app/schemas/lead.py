@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Literal
-from app.models.lead import BudgetRange
+from app.models.lead import BudgetRange, StatusChoices
 
 class LeadBase(BaseModel):
     # Lead information
@@ -37,7 +37,7 @@ class LeadBase(BaseModel):
     invoice_total: Optional[float] = 0.0
     
     # CRM fields
-    status: str
+    status: Optional[StatusChoices] = StatusChoices.NEW
     priority: Optional[int] = 0
     salesperson: Optional[str] = None
     sales_team: Optional[str] = None
@@ -45,6 +45,10 @@ class LeadBase(BaseModel):
     
     # Notes
     internal_notes: Optional[str] = None
+    
+    # New fields for source tracking
+    source: Optional[str] = None
+    platform_id: Optional[str] = None
 
 class LeadCreate(LeadBase):
     assigned_user_id: Optional[int] = None
@@ -83,7 +87,7 @@ class LeadUpdate(BaseModel):
     invoice_total: Optional[float] = None
     
     # CRM fields
-    status: Optional[str] = None
+    status: Optional[StatusChoices] = None
     priority: Optional[int] = None
     salesperson: Optional[str] = None
     sales_team: Optional[str] = None
@@ -92,6 +96,10 @@ class LeadUpdate(BaseModel):
     # Notes
     internal_notes: Optional[str] = None
     
+    # New fields for source tracking
+    source: Optional[str] = None
+    platform_id: Optional[str] = None
+    
     assigned_user_id: Optional[int] = None
 
 class LeadOut(LeadBase):
@@ -99,6 +107,47 @@ class LeadOut(LeadBase):
     assigned_user_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+# Lead Status Change
+class LeadStatusChangeBase(BaseModel):
+    previous_status: str
+    new_status: str
+    changed_by_id: Optional[int] = None
+
+class LeadStatusChangeCreate(LeadStatusChangeBase):
+    pass
+
+class LeadStatusChangeUpdate(BaseModel):
+    previous_status: Optional[str] = None
+    new_status: Optional[str] = None
+    changed_by_id: Optional[int] = None
+
+class LeadStatusChangeOut(LeadStatusChangeBase):
+    id: int
+    timestamp: datetime
+
+    class Config:
+        orm_mode = True
+
+# Lead Note
+class LeadNoteBase(BaseModel):
+    content: str
+    user_id: Optional[int] = None
+
+class LeadNoteCreate(LeadNoteBase):
+    pass
+
+class LeadNoteUpdate(BaseModel):
+    content: Optional[str] = None
+    user_id: Optional[int] = None
+
+class LeadNoteOut(LeadNoteBase):
+    id: int
+    created_at: datetime
 
     class Config:
         orm_mode = True

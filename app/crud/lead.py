@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from app.models.lead import Lead
-from app.schemas.lead import LeadCreate, LeadUpdate
+from app.models.lead import Lead, LeadStatusChange, LeadNote
+from app.schemas.lead import LeadCreate, LeadUpdate, LeadStatusChangeCreate, LeadStatusChangeUpdate, LeadNoteCreate, LeadNoteUpdate
 
 def create_lead(db: Session, lead_in: LeadCreate, user_id: int):
     # Use the assigned_user_id from the request if provided, otherwise use the current user's ID
@@ -60,6 +60,15 @@ def update_lead(db: Session, lead_id: int, lead_update: LeadUpdate):
     """Update a lead by ID"""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if lead:
+        if 'status' in lead_update.model_dump(exclude_unset=True):
+            previous_status = lead.status
+            new_status = lead_update.status
+            if previous_status != new_status:
+                create_lead_status_change(db, lead_id, LeadStatusChangeCreate(
+                    previous_status=previous_status,
+                    new_status=new_status,
+                    changed_by_id=lead.assigned_user_id
+                ))
         for field, value in lead_update.model_dump(exclude_unset=True).items():
             setattr(lead, field, value)
         db.commit()
@@ -113,3 +122,72 @@ def get_leads_count(db: Session, search: str = None, status: str = None):
 
 def get_lead_by_id(db: Session, lead_id: int):
     return db.query(Lead).filter(Lead.id == lead_id).first()
+
+
+# Lead Status Change
+
+def create_lead_status_change(db: Session, lead_id: int, status_change_in: LeadStatusChangeCreate):
+    status_change = LeadStatusChange(**status_change_in.dict(), lead_id=lead_id)
+    db.add(status_change)
+    db.commit()
+    db.refresh(status_change)
+    return status_change
+
+def get_lead_status_change(db: Session, status_change_id: int):
+    return db.query(LeadStatusChange).filter(LeadStatusChange.id == status_change_id).first()
+
+def update_lead_status_change(db: Session, status_change_id: int, status_change_update: LeadStatusChangeUpdate):
+    status_change = get_lead_status_change(db, status_change_id)
+    if status_change:
+        for field, value in status_change_update.dict(exclude_unset=True).items():
+            setattr(status_change, field, value)
+        db.commit()
+        db.refresh(status_change)
+    return status_change
+
+def delete_lead_status_change(db: Session, status_change_id: int):
+    status_change = get_lead_status_change(db, status_change_id)
+    if status_change:
+        db.delete(status_change)
+        db.commit()
+    return status_change
+
+def create_lead_note(db: Session, lead_id: int, note_in: LeadNoteCreate):
+    note = LeadNote(**note_in.dict(), lead_id=lead_id)
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+def get_lead_note(db: Session, note_id: int):
+    return db.query(LeadNote).filter(LeadNote.id == note_id).first()
+
+def update_lead_note(db: Session, note_id: int, note_update: LeadNoteUpdate):
+    note = get_lead_note(db, note_id)
+    if note:
+        for field, value in note_update.dict(exclude_unset=True).items():
+            setattr(note, field, value)
+        db.commit()
+        db.refresh(note)
+    return note
+
+def delete_lead_note(db: Session, note_id: int):
+    note = get_lead_note(db, note_id)
+    if note:
+        db.delete(note)
+        db.commit()
+    return note
+
+def get_lead_by_platform_id(db: Session, platform_id: str):
+    """Retrieve a lead by its platform-specific ID"""
+    return db.query(Lead).filter(Lead.platform_id == platform_id).first()
+
+def update_lead_by_platform_id(db: Session, platform_id: str, lead_update: LeadUpdate):
+    """Update a lead by its platform-specific ID"""
+    lead = get_lead_by_platform_id(db, platform_id)
+    if lead:
+        for field, value in lead_update.model_dump(exclude_unset=True).items():
+            setattr(lead, field, value)
+        db.commit()
+        db.refresh(lead)
+    return lead
