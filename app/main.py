@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.core.database import Base, engine
-from app.api.v1 import user, lead
+from app.api.v1 import user, lead , line
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -19,3 +19,4 @@ app.add_middleware(
 
 app.include_router(user.router, prefix="/api/v1", tags=["Users"])
 app.include_router(lead.router, prefix="/api/v1", tags=["Leads"])
+app.include_router(line.router, prefix="/api/v1", tags=["Line"])
