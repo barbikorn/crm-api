@@ -5,58 +5,8 @@ from app.models.lead import BudgetRange, StatusChoices
 
 class LeadBase(BaseModel):
     # Lead information
-    name: str
-    probability: Optional[float] = 0.0
-    
-    # Company information
-    company_name: Optional[str] = None
-    
-    # Address components
-    street: Optional[str] = None
-    street2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    zip_code: Optional[str] = None
-    country: Optional[str] = None
-    
-    website: Optional[str] = None
-    
-    # Contact details
-    contact_name: Optional[str] = None
-    contact_title: Optional[str] = None
-    email: str
-    job_position: Optional[str] = None
-    phone: str
-    mobile: Optional[str] = None
-    line_id: Optional[str] = None
-    age: Optional[int] = None
-    
-    # Business information
-    customer_budget: Optional[BudgetRange] = None  # Use the enum type
-    product_interest: Optional[str] = None
-    invoice_total: Optional[float] = 0.0
-    
-    # CRM fields
-    status: Optional[StatusChoices] = StatusChoices.NEW
-    priority: Optional[int] = 0
-    salesperson: Optional[str] = None
-    sales_team: Optional[str] = None
-    tags: Optional[str] = None
-    
-    # Notes
-    internal_notes: Optional[str] = None
-    
-    # New fields for source tracking
-    source: Optional[str] = None
-    platform_id: Optional[str] = None
-
-class LeadCreate(LeadBase):
-    assigned_user_id: Optional[int] = None
-
-class LeadUpdate(BaseModel):
-    # Lead information
     name: Optional[str] = None
-    probability: Optional[float] = None
+    probability: Optional[float] = 0.0
     
     # Company information
     company_name: Optional[str] = None
@@ -82,13 +32,13 @@ class LeadUpdate(BaseModel):
     age: Optional[int] = None
     
     # Business information
-    customer_budget: Optional[BudgetRange] = None  # Use the enum type
+    customer_budget: Optional[BudgetRange] = None
     product_interest: Optional[str] = None
-    invoice_total: Optional[float] = None
+    invoice_total: Optional[float] = 0.0
     
     # CRM fields
-    status: Optional[StatusChoices] = None
-    priority: Optional[int] = None
+    status: Optional[StatusChoices] = StatusChoices.NEW
+    priority: Optional[int] = 0
     salesperson: Optional[str] = None
     sales_team: Optional[str] = None
     tags: Optional[str] = None
@@ -99,7 +49,11 @@ class LeadUpdate(BaseModel):
     # New fields for source tracking
     source: Optional[str] = None
     platform_id: Optional[str] = None
-    
+
+class LeadCreate(LeadBase):
+    assigned_user_id: Optional[int] = None
+
+class LeadUpdate(LeadBase):
     assigned_user_id: Optional[int] = None
 
 class LeadOut(LeadBase):
