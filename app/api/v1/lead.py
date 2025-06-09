@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from app.schemas.lead import LeadCreate, LeadOut, LeadUpdate
 from app.crud import lead as crud_lead
 from app.api import deps
 from app.models.user import User
+from app.core.logging import LoggingService
+from app.models.log import LogLevel, LogCategory
 
 router = APIRouter()
 
@@ -12,16 +14,92 @@ router = APIRouter()
 def create_lead(
     lead: LeadCreate, 
     db: Session = Depends(deps.get_db), 
-    user: User = Depends(deps.get_current_user)
+    user: User = Depends(deps.get_current_user),
+    request: Request = None
 ):
-    # Check if user can assign to another user (admin check)
-    if lead.assigned_user_id is not None and lead.assigned_user_id != user.id and user.role_id != 1:
-        raise HTTPException(
-            status_code=403, 
-            detail="Only admins can assign leads to other users"
+    """Create a lead with comprehensive logging"""
+    try:
+        # Check if user can assign to another user (admin check)
+        if lead.assigned_user_id is not None and lead.assigned_user_id != user.id and user.role_id != 1:
+            # Log unauthorized assignment attempt
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.WARNING,
+                category=LogCategory.SECURITY,
+                message=f"Unauthorized lead assignment attempt by {user.email}",
+                module="lead_service",
+                function_name="create_lead",
+                user_id=user.id,
+                extra_data={
+                    "attempted_assignment": lead.assigned_user_id,
+                    "user_role": user.role_id
+                },
+                request=request
+            )
+            raise HTTPException(
+                status_code=403, 
+                detail="Only admins can assign leads to other users"
+            )
+        
+        # Create the lead
+        new_lead = crud_lead.create_lead(db, lead, user.id)
+        
+        # Log successful lead creation
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.INFO,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Lead created: {new_lead.name or 'Unknown'} by {user.email}",
+            module="lead_service",
+            function_name="create_lead",
+            user_id=user.id,
+            extra_data={
+                "lead_id": new_lead.id,
+                "lead_name": new_lead.name,
+                "company": new_lead.company_name,
+                "email": new_lead.email,
+                "assigned_to": new_lead.assigned_user_id,
+                "status": new_lead.status,
+                "source": new_lead.source
+            },
+            request=request
         )
-    
-    return crud_lead.create_lead(db, lead, user.id)
+        
+        # Log audit event
+        LoggingService.log_audit_event(
+            db=db,
+            user_id=user.id,
+            action="CREATE",
+            resource_type="Lead",
+            resource_id=str(new_lead.id),
+            new_values={
+                "name": new_lead.name,
+                "company_name": new_lead.company_name,
+                "email": new_lead.email,
+                "status": new_lead.status,
+                "assigned_user_id": new_lead.assigned_user_id
+            },
+            request=request
+        )
+        
+        return new_lead
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log lead creation error
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.ERROR,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Lead creation failed: {str(e)}",
+            module="lead_service",
+            function_name="create_lead",
+            user_id=user.id,
+            extra_data={"error": str(e), "lead_data": lead.dict()},
+            request=request
+        )
+        raise
 
 @router.get("/leads", response_model=List[LeadOut])
 def get_leads(
@@ -32,73 +110,330 @@ def get_leads(
     search: Optional[str] = Query(None, description="Search term for name, email or phone"),
     status: Optional[str] = Query(None, description="Filter by lead status"),
     db: Session = Depends(deps.get_db),
-    user: User = Depends(deps.get_current_user)
+    user: User = Depends(deps.get_current_user),
+    request: Request = None
 ):
-    """
-    Get leads with flexible filtering options:
-    - By default: Current user's leads
-    - With all_leads=true: All leads (admin only)
-    - With user_id parameter: Specific user's leads (admin only or own leads)
-    """
-    # Case 1: Admin requesting all leads
-    if all_leads:
-        if user.role_id != 1:  # Admin check
-            raise HTTPException(status_code=403, detail="Only admins can view all leads")
-        return crud_lead.get_all_leads(db, skip=skip, limit=limit, search=search, status=status)
-    
-    # Case 2: Admin/user requesting specific user's leads
-    if user_id is not None:
-        # Ensure only admins can view other users' leads
-        if user.role_id != 1 and user.id != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to view other users' leads")
-        return crud_lead.get_user_leads(db, user_id, skip=skip, limit=limit, search=search, status=status)
-    
-    # Case 3: Default - user viewing their own leads
-    return crud_lead.get_user_leads(db, user.id, skip=skip, limit=limit, search=search, status=status)
+    """Get leads with flexible filtering options and logging"""
+    try:
+        # Log the lead query
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.INFO,
+            category=LogCategory.USER_ACTION,
+            message=f"Lead query by {user.email}",
+            module="lead_service",
+            function_name="get_leads",
+            user_id=user.id,
+            extra_data={
+                "all_leads": all_leads,
+                "target_user_id": user_id,
+                "search": search,
+                "status": status,
+                "skip": skip,
+                "limit": limit
+            },
+            request=request
+        )
+        
+        # Case 1: Admin requesting all leads
+        if all_leads:
+            if user.role_id != 1:  # Admin check
+                # Log unauthorized access attempt
+                LoggingService.log_system_event(
+                    db=db,
+                    level=LogLevel.WARNING,
+                    category=LogCategory.SECURITY,
+                    message=f"Unauthorized attempt to view all leads by {user.email}",
+                    module="lead_service",
+                    function_name="get_leads",
+                    user_id=user.id,
+                    request=request
+                )
+                raise HTTPException(status_code=403, detail="Only admins can view all leads")
+            
+            leads = crud_lead.get_all_leads(db, skip=skip, limit=limit, search=search, status=status)
+            
+            # Log admin access to all leads
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.INFO,
+                category=LogCategory.SECURITY,
+                message=f"Admin accessed all leads: {len(leads)} results",
+                module="lead_service",
+                function_name="get_leads",
+                user_id=user.id,
+                extra_data={"leads_count": len(leads)},
+                request=request
+            )
+            
+            return leads
+        
+        # Case 2: Admin/user requesting specific user's leads
+        if user_id is not None:
+            # Ensure only admins can view other users' leads
+            if user.role_id != 1 and user.id != user_id:
+                # Log unauthorized access attempt
+                LoggingService.log_system_event(
+                    db=db,
+                    level=LogLevel.WARNING,
+                    category=LogCategory.SECURITY,
+                    message=f"Unauthorized attempt to view user {user_id} leads by {user.email}",
+                    module="lead_service",
+                    function_name="get_leads",
+                    user_id=user.id,
+                    extra_data={"target_user_id": user_id},
+                    request=request
+                )
+                raise HTTPException(status_code=403, detail="Not authorized to view other users' leads")
+            
+            leads = crud_lead.get_user_leads(db, user_id, skip=skip, limit=limit, search=search, status=status)
+            return leads
+        
+        # Case 3: Default - user viewing their own leads
+        leads = crud_lead.get_user_leads(db, user.id, skip=skip, limit=limit, search=search, status=status)
+        return leads
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log leads query error
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.ERROR,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Leads query failed: {str(e)}",
+            module="lead_service",
+            function_name="get_leads",
+            user_id=user.id,
+            extra_data={"error": str(e)},
+            request=request
+        )
+        raise
 
 @router.put("/leads/{lead_id}", response_model=LeadOut)
 def update_lead(
     lead_id: int, 
     update: LeadUpdate, 
     db: Session = Depends(deps.get_db), 
-    user: User = Depends(deps.get_current_user)
+    user: User = Depends(deps.get_current_user),
+    request: Request = None
 ):
-    # Check if the lead exists
-    existing_lead = crud_lead.get_lead_by_id(db, lead_id)
-    if not existing_lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    
-    # Check authorization - admins can update any lead, users only their own
-    if user.role_id != 1 and existing_lead.assigned_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this lead")
-    
-    # Check if trying to reassign and has permission
-    if update.assigned_user_id is not None and update.assigned_user_id != existing_lead.assigned_user_id:
-        if user.role_id != 1:  # Admin check
-            raise HTTPException(status_code=403, detail="Only admins can reassign leads")
-    
-    # Update the lead
-    lead = crud_lead.update_lead(db, lead_id, update)
-    return lead
+    """Update a lead with comprehensive logging"""
+    try:
+        # Check if the lead exists
+        existing_lead = crud_lead.get_lead_by_id(db, lead_id)
+        if not existing_lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        # Store old values for audit
+        old_values = {
+            "name": existing_lead.name,
+            "company_name": existing_lead.company_name,
+            "email": existing_lead.email,
+            "status": existing_lead.status,
+            "assigned_user_id": existing_lead.assigned_user_id
+        }
+        
+        # Check authorization - admins can update any lead, users only their own
+        if user.role_id != 1 and existing_lead.assigned_user_id != user.id:
+            # Log unauthorized update attempt
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.WARNING,
+                category=LogCategory.SECURITY,
+                message=f"Unauthorized lead update attempt: Lead {lead_id} by {user.email}",
+                module="lead_service",
+                function_name="update_lead",
+                user_id=user.id,
+                extra_data={"lead_id": lead_id, "lead_owner": existing_lead.assigned_user_id},
+                request=request
+            )
+            raise HTTPException(status_code=403, detail="Not authorized to update this lead")
+        
+        # Check if trying to reassign and has permission
+        if update.assigned_user_id is not None and update.assigned_user_id != existing_lead.assigned_user_id:
+            if user.role_id != 1:  # Admin check
+                # Log unauthorized reassignment attempt
+                LoggingService.log_system_event(
+                    db=db,
+                    level=LogLevel.WARNING,
+                    category=LogCategory.SECURITY,
+                    message=f"Unauthorized lead reassignment attempt by {user.email}",
+                    module="lead_service",
+                    function_name="update_lead",
+                    user_id=user.id,
+                    extra_data={
+                        "lead_id": lead_id,
+                        "from_user": existing_lead.assigned_user_id,
+                        "to_user": update.assigned_user_id
+                    },
+                    request=request
+                )
+                raise HTTPException(status_code=403, detail="Only admins can reassign leads")
+            
+            # Log lead reassignment
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.INFO,
+                category=LogCategory.BUSINESS_LOGIC,
+                message=f"Lead {lead_id} reassigned from user {existing_lead.assigned_user_id} to {update.assigned_user_id} by {user.email}",
+                module="lead_service",
+                function_name="update_lead",
+                user_id=user.id,
+                extra_data={
+                    "lead_id": lead_id,
+                    "from_user": existing_lead.assigned_user_id,
+                    "to_user": update.assigned_user_id
+                },
+                request=request
+            )
+        
+        # Update the lead
+        updated_lead = crud_lead.update_lead(db, lead_id, update)
+        
+        # Prepare new values for audit
+        new_values = {
+            "name": updated_lead.name,
+            "company_name": updated_lead.company_name,
+            "email": updated_lead.email,
+            "status": updated_lead.status,
+            "assigned_user_id": updated_lead.assigned_user_id
+        }
+        
+        # Log successful lead update
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.INFO,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Lead updated: {updated_lead.name or 'Unknown'} (ID: {lead_id}) by {user.email}",
+            module="lead_service",
+            function_name="update_lead",
+            user_id=user.id,
+            extra_data={
+                "lead_id": lead_id,
+                "updated_fields": update.dict(exclude_unset=True)
+            },
+            request=request
+        )
+        
+        # Log audit event
+        LoggingService.log_audit_event(
+            db=db,
+            user_id=user.id,
+            action="UPDATE",
+            resource_type="Lead",
+            resource_id=str(lead_id),
+            old_values=old_values,
+            new_values=new_values,
+            request=request
+        )
+        
+        return updated_lead
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log lead update error
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.ERROR,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Lead update failed: {str(e)}",
+            module="lead_service",
+            function_name="update_lead",
+            user_id=user.id,
+            extra_data={"error": str(e), "lead_id": lead_id},
+            request=request
+        )
+        raise
 
 @router.delete("/leads/{lead_id}")
 def delete_lead(
     lead_id: int, 
     db: Session = Depends(deps.get_db), 
-    user: User = Depends(deps.get_current_user)
+    user: User = Depends(deps.get_current_user),
+    request: Request = None
 ):
-    # Check if the lead exists
-    existing_lead = crud_lead.get_lead_by_id(db, lead_id)
-    if not existing_lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    
-    # Check authorization - admins can delete any lead, users only their own
-    if user.role_id != 1 and existing_lead.assigned_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this lead")
-    
-    # Delete the lead
-    crud_lead.delete_lead(db, lead_id)
-    return {"detail": "Lead deleted successfully"}
+    """Delete a lead with comprehensive logging"""
+    try:
+        # Check if the lead exists
+        existing_lead = crud_lead.get_lead_by_id(db, lead_id)
+        if not existing_lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        # Store lead data for audit
+        lead_data = {
+            "name": existing_lead.name,
+            "company_name": existing_lead.company_name,
+            "email": existing_lead.email,
+            "status": existing_lead.status,
+            "assigned_user_id": existing_lead.assigned_user_id
+        }
+        
+        # Check authorization - admins can delete any lead, users only their own
+        if user.role_id != 1 and existing_lead.assigned_user_id != user.id:
+            # Log unauthorized deletion attempt
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.WARNING,
+                category=LogCategory.SECURITY,
+                message=f"Unauthorized lead deletion attempt: Lead {lead_id} by {user.email}",
+                module="lead_service",
+                function_name="delete_lead",
+                user_id=user.id,
+                extra_data={"lead_id": lead_id, "lead_owner": existing_lead.assigned_user_id},
+                request=request
+            )
+            raise HTTPException(status_code=403, detail="Not authorized to delete this lead")
+        
+        # Delete the lead
+        crud_lead.delete_lead(db, lead_id)
+        
+        # Log successful lead deletion
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.WARNING,  # Deletion is a significant action
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Lead deleted: {existing_lead.name or 'Unknown'} (ID: {lead_id}) by {user.email}",
+            module="lead_service",
+            function_name="delete_lead",
+            user_id=user.id,
+            extra_data={
+                "lead_id": lead_id,
+                "deleted_lead_data": lead_data
+            },
+            request=request
+        )
+        
+        # Log audit event
+        LoggingService.log_audit_event(
+            db=db,
+            user_id=user.id,
+            action="DELETE",
+            resource_type="Lead",
+            resource_id=str(lead_id),
+            old_values=lead_data,
+            request=request
+        )
+        
+        return {"detail": "Lead deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log lead deletion error
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.ERROR,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Lead deletion failed: {str(e)}",
+            module="lead_service",
+            function_name="delete_lead",
+            user_id=user.id,
+            extra_data={"error": str(e), "lead_id": lead_id},
+            request=request
+        )
+        raise
 
 @router.get("/leads/count")
 def get_leads_count(

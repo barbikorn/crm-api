@@ -19,7 +19,7 @@ class LineMessageOut(LineMessageBase):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class LineUserBase(BaseModel):
     user_id: str
@@ -35,4 +35,4 @@ class LineUserOut(LineUserBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True

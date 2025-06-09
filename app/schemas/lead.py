@@ -63,7 +63,7 @@ class LeadOut(LeadBase):
     updated_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Lead Status Change
@@ -85,7 +85,7 @@ class LeadStatusChangeOut(LeadStatusChangeBase):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # Lead Note
 class LeadNoteBase(BaseModel):
@@ -104,4 +104,4 @@ class LeadNoteOut(LeadNoteBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
