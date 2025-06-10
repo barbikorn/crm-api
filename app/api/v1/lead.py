@@ -14,13 +14,13 @@ router = APIRouter()
 def create_lead(
     lead: LeadCreate, 
     db: Session = Depends(deps.get_db), 
-    user: User = Depends(deps.get_current_user),
-    request: Request = None
+    request: Request = None,
+    user: Optional[User] = Depends(deps.get_current_user_optional)
 ):
-    """Create a lead with comprehensive logging"""
+    """Create a lead with comprehensive logging. No authentication required."""
     try:
-        # Check if user can assign to another user (admin check)
-        if lead.assigned_user_id is not None and lead.assigned_user_id != user.id and user.role_id != 1:
+        # Only check assignment if user is present
+        if user is not None and lead.assigned_user_id is not None and lead.assigned_user_id != user.id and user.role_id != 1:
             # Log unauthorized assignment attempt
             LoggingService.log_system_event(
                 db=db,
@@ -41,18 +41,18 @@ def create_lead(
                 detail="Only admins can assign leads to other users"
             )
         
-        # Create the lead
-        new_lead = crud_lead.create_lead(db, lead, user.id)
+        # Create the lead (user.id if user else None)
+        new_lead = crud_lead.create_lead(db, lead, user.id if user else None)
         
-        # Log successful lead creation
+        # Log successful lead creation (if user)
         LoggingService.log_system_event(
             db=db,
             level=LogLevel.INFO,
             category=LogCategory.BUSINESS_LOGIC,
-            message=f"Lead created: {new_lead.name or 'Unknown'} by {user.email}",
+            message=f"Lead created: {new_lead.name or 'Unknown'} by {user.email if user else 'anonymous'}",
             module="lead_service",
             function_name="create_lead",
-            user_id=user.id,
+            user_id=user.id if user else None,
             extra_data={
                 "lead_id": new_lead.id,
                 "lead_name": new_lead.name,
@@ -65,22 +65,23 @@ def create_lead(
             request=request
         )
         
-        # Log audit event
-        LoggingService.log_audit_event(
-            db=db,
-            user_id=user.id,
-            action="CREATE",
-            resource_type="Lead",
-            resource_id=str(new_lead.id),
-            new_values={
-                "name": new_lead.name,
-                "company_name": new_lead.company_name,
-                "email": new_lead.email,
-                "status": new_lead.status,
-                "assigned_user_id": new_lead.assigned_user_id
-            },
-            request=request
-        )
+        # Log audit event (if user)
+        if user:
+            LoggingService.log_audit_event(
+                db=db,
+                user_id=user.id,
+                action="CREATE",
+                resource_type="Lead",
+                resource_id=str(new_lead.id),
+                new_values={
+                    "name": new_lead.name,
+                    "company_name": new_lead.company_name,
+                    "email": new_lead.email,
+                    "status": new_lead.status,
+                    "assigned_user_id": new_lead.assigned_user_id
+                },
+                request=request
+            )
         
         return new_lead
         
@@ -95,7 +96,7 @@ def create_lead(
             message=f"Lead creation failed: {str(e)}",
             module="lead_service",
             function_name="create_lead",
-            user_id=user.id,
+            user_id=user.id if user else None,
             extra_data={"error": str(e), "lead_data": lead.dict()},
             request=request
         )

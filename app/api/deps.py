@@ -1,9 +1,10 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.core.jwt import decode_token
 from app.core.database import SessionLocal
 from app.models.user import User
+from typing import Optional
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
@@ -23,6 +24,20 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         return user
     except:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
+    auth: str = request.headers.get("Authorization")
+    if not auth:
+        return None
+    try:
+        scheme, token = auth.split()
+        if scheme.lower() != "bearer":
+            return None
+        payload = decode_token(token)
+        user = db.query(User).filter(User.id == int(payload.get("sub"))).first()
+        return user
+    except Exception:
+        return None
 
 def require_role(*roles):
     def wrapper(user: User = Depends(get_current_user)):

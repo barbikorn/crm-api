@@ -58,7 +58,7 @@ class LeadUpdate(LeadBase):
 
 class LeadOut(LeadBase):
     id: int
-    assigned_user_id: int
+    assigned_user_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

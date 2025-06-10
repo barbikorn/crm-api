@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session
 from app.models.lead import Lead, LeadStatusChange, LeadNote
 from app.schemas.lead import LeadCreate, LeadUpdate, LeadStatusChangeCreate, LeadStatusChangeUpdate, LeadNoteCreate, LeadNoteUpdate
 
-def create_lead(db: Session, lead_in: LeadCreate, user_id: int):
-    # Use the assigned_user_id from the request if provided, otherwise use the current user's ID
+def create_lead(db: Session, lead_in: LeadCreate, user_id: int = None):
+    # Use the assigned_user_id from the request if provided, otherwise use the current user's ID (if any)
     assigned_id = lead_in.assigned_user_id if lead_in.assigned_user_id is not None else user_id
     
     # Convert to dict and exclude assigned_user_id since we're handling it separately
