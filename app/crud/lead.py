@@ -178,6 +178,14 @@ def delete_lead_note(db: Session, note_id: int):
         db.commit()
     return note
 
+def get_lead_notes_by_lead_id(db: Session, lead_id: int, skip: int = 0, limit: int = 100):
+    """Get all notes for a specific lead with pagination"""
+    return db.query(LeadNote).filter(LeadNote.lead_id == lead_id).order_by(LeadNote.created_at.desc()).offset(skip).limit(limit).all()
+
+def get_lead_status_changes_by_lead_id(db: Session, lead_id: int, skip: int = 0, limit: int = 100):
+    """Get all status changes for a specific lead with pagination"""
+    return db.query(LeadStatusChange).filter(LeadStatusChange.lead_id == lead_id).order_by(LeadStatusChange.timestamp.desc()).offset(skip).limit(limit).all()
+
 def get_lead_by_platform_id(db: Session, platform_id: str):
     """Retrieve a lead by its platform-specific ID"""
     return db.query(Lead).filter(Lead.platform_id == platform_id).first()

@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from app.schemas.lead import LeadCreate, LeadOut, LeadUpdate
+from app.schemas.lead import (
+    LeadCreate, LeadOut, LeadUpdate, 
+    LeadNoteOut, LeadNoteCreate, LeadNoteUpdate,
+    LeadStatusChangeOut, LeadStatusChangeCreate, LeadStatusChangeUpdate
+)
 from app.crud import lead as crud_lead
 from app.api import deps
 from app.models.user import User
@@ -445,7 +449,7 @@ def get_leads_count(
     db: Session = Depends(deps.get_db),
     user: User = Depends(deps.get_current_user)
 ):
-    """Get total count of leads with the same filtering options as the GET endpoint"""
+    """Get total count of leads with the same filtering options as the  GET endpoint"""
     # Case 1: Admin requesting all leads count
     if all_leads:
         if user.role_id != 1:  # Admin check
@@ -523,7 +527,6 @@ def update_lead_by_platform_id(
     return lead
 
 # Lead Status Change
-from app.schemas.lead import LeadStatusChangeCreate, LeadStatusChangeOut, LeadStatusChangeUpdate, LeadNoteCreate, LeadNoteOut, LeadNoteUpdate
 
 @router.post("/leads/{lead_id}/status-change", response_model=LeadStatusChangeOut)
 def create_status_change(
@@ -576,5 +579,149 @@ def delete_note(
     db: Session = Depends(deps.get_db),
     user: User = Depends(deps.get_current_user)
 ):
-    crud_lead.delete_lead_note(db, note_id)
-    return {"detail": "Note deleted successfully"}
+    note = crud_lead.delete_lead_note(db=db, note_id=note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"message": "Note deleted successfully"}
+
+@router.get("/leads/{lead_id}/notes", response_model=List[LeadNoteOut])
+def get_notes_by_lead_id(
+    lead_id: int,
+    skip: int = Query(0, description="Number of notes to skip"),
+    limit: int = Query(100, description="Maximum number of notes to return"),
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user),
+    request: Request = None
+):
+    """Get all notes for a specific lead with authentication and logging"""
+    try:
+        # Verify the lead exists and user has access
+        lead = crud_lead.get_lead_by_id(db, lead_id)
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        # Check authorization - admin can see all, users can only see their assigned leads
+        if user.role_id != 1 and lead.assigned_user_id != user.id:
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.WARNING,
+                category=LogCategory.SECURITY,
+                message=f"Unauthorized attempt to view notes for lead {lead_id} by {user.email}",
+                module="lead_service",
+                function_name="get_notes_by_lead_id",
+                user_id=user.id,
+                extra_data={"lead_id": lead_id, "lead_assigned_to": lead.assigned_user_id},
+                request=request
+            )
+            raise HTTPException(status_code=403, detail="Not authorized to view notes for this lead")
+        
+        # Get notes for the lead
+        notes = crud_lead.get_lead_notes_by_lead_id(db, lead_id, skip=skip, limit=limit)
+        
+        # Log successful notes retrieval
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.INFO,
+            category=LogCategory.USER_ACTION,
+            message=f"Notes retrieved for lead {lead_id} by {user.email}",
+            module="lead_service",
+            function_name="get_notes_by_lead_id",
+            user_id=user.id,
+            extra_data={
+                "lead_id": lead_id,
+                "notes_count": len(notes),
+                "skip": skip,
+                "limit": limit
+            },
+            request=request
+        )
+        
+        return notes
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log error
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.ERROR,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Failed to retrieve notes for lead {lead_id}: {str(e)}",
+            module="lead_service",
+            function_name="get_notes_by_lead_id",
+            user_id=user.id,
+            extra_data={"error": str(e), "lead_id": lead_id},
+            request=request
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/leads/{lead_id}/status-changes", response_model=List[LeadStatusChangeOut])
+def get_status_changes_by_lead_id(
+    lead_id: int,
+    skip: int = Query(0, description="Number of status changes to skip"),
+    limit: int = Query(100, description="Maximum number of status changes to return"),
+    db: Session = Depends(deps.get_db),
+    user: User = Depends(deps.get_current_user),
+    request: Request = None
+):
+    """Get all status changes for a specific lead with authentication and logging"""
+    try:
+        # Verify the lead exists and user has access
+        lead = crud_lead.get_lead_by_id(db, lead_id)
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        # Check authorization - admin can see all, users can only see their assigned leads
+        if user.role_id != 1 and lead.assigned_user_id != user.id:
+            LoggingService.log_system_event(
+                db=db,
+                level=LogLevel.WARNING,
+                category=LogCategory.SECURITY,
+                message=f"Unauthorized attempt to view status changes for lead {lead_id} by {user.email}",
+                module="lead_service",
+                function_name="get_status_changes_by_lead_id",
+                user_id=user.id,
+                extra_data={"lead_id": lead_id, "lead_assigned_to": lead.assigned_user_id},
+                request=request
+            )
+            raise HTTPException(status_code=403, detail="Not authorized to view status changes for this lead")
+        
+        # Get status changes for the lead
+        status_changes = crud_lead.get_lead_status_changes_by_lead_id(db, lead_id, skip=skip, limit=limit)
+        
+        # Log successful status changes retrieval
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.INFO,
+            category=LogCategory.USER_ACTION,
+            message=f"Status changes retrieved for lead {lead_id} by {user.email}",
+            module="lead_service",
+            function_name="get_status_changes_by_lead_id",
+            user_id=user.id,
+            extra_data={
+                "lead_id": lead_id,
+                "status_changes_count": len(status_changes),
+                "skip": skip,
+                "limit": limit
+            },
+            request=request
+        )
+        
+        return status_changes
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log error
+        LoggingService.log_system_event(
+            db=db,
+            level=LogLevel.ERROR,
+            category=LogCategory.BUSINESS_LOGIC,
+            message=f"Failed to retrieve status changes for lead {lead_id}: {str(e)}",
+            module="lead_service",
+            function_name="get_status_changes_by_lead_id",
+            user_id=user.id,
+            extra_data={"error": str(e), "lead_id": lead_id},
+            request=request
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
