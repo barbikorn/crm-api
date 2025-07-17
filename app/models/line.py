@@ -15,6 +15,7 @@ class LineMessage(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     reply_token = Column(String, nullable=True)
     is_read = Column(Boolean, default=False)
+    provider = Column(String, nullable=True)
 
     def __str__(self):
         return f"{self.user_id}: {self.message_text[:30]}"

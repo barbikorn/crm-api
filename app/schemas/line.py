@@ -10,6 +10,7 @@ class LineMessageBase(BaseModel):
     sticker_url: Optional[str] = None
     reply_token: Optional[str] = None
     is_read: Optional[bool] = False
+    provider: Optional[str] = None
 
 class LineMessageCreate(LineMessageBase):
     pass
